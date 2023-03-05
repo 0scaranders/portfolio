@@ -1,0 +1,277 @@
+---
+title: "How does a Bike-Share Navigate Speedy Success?"
+author: "Oscar Leyva"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+#Library
+library(readr)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(ggplot2)
+library(knitr)
+
+```
+
+
+## Introduction
+
+Since Cyclistic's successful launch in 2016, they have provided 5824 bicycles into a network of 692 stations across Chicago. Customers unlock a bike from one station and return it to another at their journey's end. The easy-to-use system coupled with flexible pricing plans has made the business appealing. A distinction is made between customers based on what pricing plan they follow. Single-ride and full-day pass holders are classified as **Casual riders**. On the contrary, customers who purchase annual memberships are considered **Cyclistic members**. Now, Cyclistic wants to focus its next marketing campaign on converting Casual riders into Cyclistic members. Casual riders are familiar with how the Bike-Share operates and thus seems like an important focal point. To accomplish this we need to understand what differentiates these two customer types from each other. After understanding how their behaviors differ we can design a marketing campaign based on data. This approach will help maximize the potential growth a successful conversion could attain. 
+
+To help us with the data analysis Cyclistic has provided us with historical trip data to identify trends. After cleaning and transforming the data we can begin our search for critical differences. After that, we present our top three recommendations for a successful marketing program. 
+
+
+## Data
+
+```{r include=FALSE}
+february_2022 <- read_csv("202202-divvy-tripdata.csv")
+march_2022 <-  read_csv("202203-divvy-tripdata.csv")
+april_2022 <- read_csv("202204-divvy-tripdata.csv")
+may_2022 <- read_csv("202205-divvy-tripdata.csv")
+june_2022 <- read_csv("202206-divvy-tripdata.csv")
+july_2022 <- read_csv("202207-divvy-tripdata.csv")
+august_2022 <- read_csv("202208-divvy-tripdata.csv")
+september_2022 <- read_csv("202209-divvy-publictripdata.csv")
+october_2022 <- read_csv("202210-divvy-tripdata.csv")
+november_2022 <-read_csv("202211-divvy-tripdata.csv")
+december_2022 <- read_csv("202212-divvy-tripdata.csv")
+january_2023 <- read_csv("202301-divvy-tripdata.csv")
+```
+
+```{r include=FALSE}
+# Function that manipulates the data 
+
+clean <- function(df) {
+  
+  # 1. Drop irrelevant columns
+  # 2. Factor member_casual
+  # 3. Concat station name + id
+  # 4. Factor rideable_type
+  
+  df <- df %>%
+    select(-start_lat, -start_lng, -end_lat, -end_lng)
+  
+  df <- df %>%
+    mutate(rideable_type = as.factor(rideable_type),
+           member_casual = as.factor(member_casual))
+  
+  df <- df %>%
+    unite("start_location", start_station_name:start_station_id, remove=TRUE) %>%
+    unite("end_location", end_station_name:end_station_id, remove=TRUE)
+  
+  return(df)
+  
+}
+
+
+```
+
+```{r include=FALSE}
+january_2023 <- clean(january_2023)
+february_2022 <- clean(february_2022)
+march_2022 <- clean(march_2022)
+april_2022 <- clean(april_2022)
+may_2022 <- clean(may_2022)
+june_2022 <- clean(june_2022)
+july_2022 <- clean(july_2022)
+august_2022 <- clean(august_2022)
+september_2022 <- clean(september_2022)
+october_2022 <- clean(october_2022)
+november_2022 <- clean(november_2022)
+december_2022 <- clean(december_2022)
+```
+
+```{r include=FALSE}
+# Append rowwise to create the full df
+df <- rbind(february_2022, march_2022, april_2022, may_2022, june_2022, july_2022, august_2022, september_2022, october_2022, november_2022, december_2022, january_2023)
+
+```
+
+```{r include=FALSE}
+# Remove dataframes to free up space
+rm(february_2022, march_2022, april_2022, may_2022, june_2022, july_2022, august_2022, september_2022, october_2022, november_2022, december_2022, january_2023)
+rm(list_of_dfs)
+
+data <- as_tibble(df)
+rm(df)
+```
+
+Cyclistic data is located at https://divvy-tripdata.s3.amazonaws.com/index.html. For this analysis, we looked at all bike trips spanning the time period of February 2022 to January 2023. Since the data provided comes from a first party it boosts its credibility. The data consists of each observation being a completed bike ride. As stated by Cyclic it denotes all bike rides that were longer than 60 seconds to ensure no false starts are included. They also removed trips taken by staff as they cannot be classified as either of the two customer types. The data includes the location of the start and end of a trip as well as the day and time it started/ended. The rider's type is also collected as Member or Casual. With this, we can infer key differences between the customer types. 
+
+### Data manipulation
+
+Cyclistic stores monthly data in a separate file. Thus we had to download each zip file individually and then merge them together to get the full data set for our time period. Before merging we dropped columns that contained longitudinal and latitudinal for the start and end locations of each bike trip. We also dropped columns containing the start and end locations of the trips. A glimpse at the data shows that no NA values are present. 
+
+To prepare for the upcoming analysis we created four new columns. One of them is **trip_duration** which denotes the duration of the trip based on when it started and ended. This was done by subtracting the end time with the start time. The duration is in minutes. When checking for data validation it was found that 100 trips resulted in a negative trip duration. Investigating further shows that 40 of these occurred on November 6th. This could imply that a system error made the start and end times swap and thus calculating the duration yields negative times. However, due to it likely being a system error and the possibility of other trip information also being wrong, we remove these trips. Since the data consists of over five million trips, removing 100 of them will not impact the business task in question. 
+
+The second column created is **weekday_started_at** which extracts what day of the week the bike was rented on. For the column **hour_started_at** we extract the hour the trip began on. In particular, this aided in the computation of the last column **part_of_day**. The column denotes if the trip started in the morning, afternoon, evening, or night. We used the time conventions found in the Britannica Dictionary. Morning is defined as the time between 5:00 and 11:59. Afternoon lasts until 16:59. Evening is until 21:59. Night hours are then from 22:00 to 4:59.
+
+Finally, we converted the **rideable_type** and **member_casual** columns to categorical columns. In the data, there are three bike types. Docked, electric, and classic bikes. There are no trips recorded for members riding a docked bike. Casuals who rode a docked bike had an average trip duration of 123 minutes. The second-highest average trip duration of 29 minutes was for casuals who rode a classic bike. Thus, docked bike trips skew the data. Since there is no way in comparing the same bike type for members it would be unfair to include casuals riding docked bikes. Another argument for its removal is looking at the highest trip duration based on bike type and customer type. The highest trip duration for a casual riding a docked bike was 41400 minutes. The second and third highest trip duration was by a casual and member riding a classic bike, clocking in at 1560 minutes. Both of them being at the same time indicates that the trip duration hit a ceiling. For all the reasons above, we chose to remove the docked bike in the data which means that 178245 rides were removed. 
+
+```{r include=FALSE}
+# Drop location columns and create a trip_duration one. 
+
+data %<>%
+  select(-start_location, -end_location)
+
+data %<>%
+  mutate(trip_duration = difftime(ended_at,started_at,units="mins"))
+
+#Filter out negative trip durations
+data <- data %>%
+  filter(trip_duration > 0)
+```
+
+```{r include=FALSE}
+#Create weekdays column and hour column
+
+data <- data %>%
+  mutate(weekday_started_at = weekdays(started_at),
+         hour_started_at = hour(started_at),
+         part_of_day = case_when(hour_started_at >= 5 & hour_started_at < 12 ~ "Morning", 
+                                hour_started_at >= 12 & hour_started_at < 18 ~ "Afternoon",
+                                hour_started_at >= 18 & hour_started_at < 21 ~ "Evening",
+                                hour_started_at >= 21 | hour_started_at < 5 ~ "Night",
+                                TRUE ~ "NA"))
+
+# Factor the part_of_day and weekday_started_at columns. 
+
+data <- data %>%
+  mutate(part_of_day = as.factor(part_of_day),
+         weekday_started_at = as.factor(weekday_started_at))
+```
+
+
+## Results
+
+### Trip duration
+
+```{r echo=FALSE}
+data_stat <- data %>%
+  filter(rideable_type != "docked_bike") %>%
+  group_by(member_casual) %>%
+  summarise(mean = round(mean(trip_duration)), sd = round(sd(trip_duration)),median = round(median(trip_duration))) %>%
+  mutate(mean = as.numeric(mean), median = as.numeric(median))
+data_stat %>%
+  kable()
+```
+
+Trip duration seems to differ between the two customer types. Casual customers have an average trip duration of 21 minutes whereas members bicycle for an average of 13 minutes. The standard deviation implies that casual customers vary greatly in how long they rent a bike. Performing a statistical test shows that the difference in average between the customer types is not due to randomness. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+months_order <- c("Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan")
+
+
+data %>%
+  filter(rideable_type != "docked_bike") %>%
+  group_by(member_casual, month(started_at, label = TRUE)) %>%
+  summarise( mean = mean(trip_duration)) %>%
+  rename("months" = 2) %>%
+  ggplot(mapping = aes(y=as.numeric(mean), x=factor(months,level = months_order), color =member_casual, group=member_casual)) + geom_point() +
+  geom_point(size=2.4) +
+  labs(title = "Average trip duration for each month", x="", y="Minutes", color="Customer Type") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30), breaks = seq(0,30,5)) +
+  geom_hline(data = data_stat, mapping = aes(yintercept = mean, color = member_casual, group = member_casual), alpha=0.5) +
+  annotate("text", x="Mar", y=14.5, label  = "Overall average") +
+  scale_color_manual(values=c("#f1a340", "#998ec3"))
+  
+
+```
+
+
+The average trip duration for casuals is greater than members during the months investigated. Member's trip duration remains consistent throughout the year. On the other hand, fluctuations can be seen for the trip duration among casuals. For example, in May the average trip duration is 25 minutes for casuals. This decreases to 14 in December which means that the trip duration is lowered by 11 minutes. For members, their highest average trip duration was in June, and their lowest was in January. The difference between the two is 3 minutes.  
+
+
+### Part of the day
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+day_order <- c("Morning", "Afternoon", "Evening", "Night")
+
+data %>%
+  filter(rideable_type != "docked_bike") %>%
+  group_by(member_casual, part_of_day) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ggplot(mapping = aes(x=factor(part_of_day, level =day_order) , y=freq, fill=member_casual)) + geom_col(position = "dodge") +
+  labs(title = "At what part of the day does a bike rent start?", x="", y="Percentage", fill="Customer Type")+
+  scale_y_continuous(expand = c(0,0), limits = c(0, 0.5)) +
+  scale_fill_manual(values=c("#f1a340", "#998ec3"))
+  
+```
+
+Members utilize the service in the mornings at a higher rate than casual customers do. On the contrary, casuals use the service more frequently at night compared to members. During the afternoon and evening, the usage is similar between casuals and members. The day with the largest difference between the two being on Saturday. 
+
+### Day of the week the trips start in.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+weekday_order <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+data %>%
+  filter(rideable_type != "docked_bike") %>%
+  group_by(member_casual, weekday_started_at) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ggplot(mapping = aes(x=factor(weekday_started_at, level =weekday_order) , y=freq, color=member_casual, group=member_casual)) + 
+  geom_line(linewidth=1) + 
+  geom_point(size=2) +
+  labs(title = "On what days are the customers using the service?", x="", y="Percentage", color="Customer Type") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.25)) +
+  scale_color_manual(values=c("#f1a340", "#998ec3"))
+  
+
+
+```
+
+Members use the service more during working days. The only exception to this is on Friday when casuals use it more. Casuals use Cyclistic during the weekend at a higher rate than members. 
+
+## Summary
+
+Let us summarize our findings.
+
+* Casuals have on average a higher trip duration than members. Their trip duration varies among them as their standard deviation was 60 minutes. Members are found to use the system for short trips, having an average trip duration of 13 minutes. 
+
+* The average trip duration depends on the month. Casuals have a higher-than-average trip duration between the months of March and July. For members, this applies to the months from May to August.  
+
+* Members use Cyclistic more often than casuals during the morning. During the afternoon and evening usage does not differ between the two customer types. At night casuals use the service at a higher rate than members. 
+
+* Compared to casuals, members use the service more between Monday to Thursday. On Fridays, both customer types have similar usage rates. On weekends, casuals rent bikes more often. 
+
+## Recommendations
+
+The marketing program should take an approach that breathes adventure. Since casuals rent a bike for longer the system should make that option more appealing. This can be done by **expanding the number of stations found in Chicago**. The expansion should focus on covering a wider area rather than introducing new stations in the most central avenues. 
+
+Electric bikes are not convenient for long trips due to them needing to charge at certain intervals. **Increasing the supply of classic bikes** would help out casuals who prefer longer trips or ones that have few stations in between. 
+
+During the night and on the weekends when there are a lot of people walking on the streets and visibility is reduced. To help out casuals who use Cyclistic at these time periods **a front lamp could be attached to bikes**. This would encourage the use of the system rather than taking a taxi or public transportation.  
+
+With these changes, casuals might use the system more frequently. By using Cyclistic more an annual membership would be a more lucrative option than buying single-ride tickets or day passes multiple times. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
